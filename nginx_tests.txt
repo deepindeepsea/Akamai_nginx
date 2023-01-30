@@ -1,0 +1,65 @@
+s#!/bin/bash 
+
+DUT_IP="172.25.60.93"
+# DUT_IP="172.25.173.66"
+LG_IP="172.25.60.108"
+LG_IP2="172.25.60.92"
+# LG_IP="172.25.173.67"
+RUN_TIME=240 # Each test run time
+INTER_SLEEP=5 # Sleep between each SSH
+
+
+TEST_RESULTS_FOLDER="tests_spr_2LG_Long_1600_power" 
+
+
+for SIZE in 1K 64K 128K 256K 512K 1M 2M #512K 1K 64K 1M # 
+do
+    for RPS in 30000 25000 20000 15000 12500 10000 8000 6000 4000 2000 1000
+    do
+        date
+        echo "$SIZE.$RPS: Running"
+        echo "$SIZE.$RPS: Making test directory on LG"
+        ssh akamai@$LG_IP "mkdir -p /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE">> outfile 2>&1&
+        ssh akamai@$LG_IP2 "mkdir -p /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE">> outfile 2>&1&
+        sleep $INTER_SLEEP
+        echo "$SIZE.$RPS: Making test directory on DUT"
+        ssh akamai@$DUT_IP "mkdir -p /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE">> outfile 2>&1&
+        sleep $INTER_SLEEP
+
+        echo "$SIZE.$RPS: Starting load"
+        ssh akamai@$LG_IP "/home/akamai/wrk2/wrk -t10 -c500 -d240 -R$RPS --latency http://$DUT_IP/hello/$SIZE > /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE/wrk.$SIZE.$RPS.1">> outfile 2>&1&
+        ssh akamai@$LG_IP2 "/home/akamai/wrk2/wrk -t10 -c500 -d240 -R$RPS --latency http://$DUT_IP/hello2/$SIZE > /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE/wrk.$SIZE.$RPS.2">> outfile 2>&1&
+        sleep $INTER_SLEEP
+        
+        echo "$SIZE.$RPS: Starting gathering sar network stats"
+        ssh akamai@$DUT_IP "sar -n DEV 180 1 > /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE/sar_$SIZE.$RPS">> outfile 2>&1&
+        sleep $INTER_SLEEP
+        echo "$SIZE.$RPS: Starting to gather mpstat"
+        ssh akamai@$DUT_IP "mpstat -P ALL 180 1 -o JSON  > /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE/mpstat_$SIZE.$RPS">> outfile 2>&1&
+        # sleep $INTER_SLEEP
+        # echo "$SIZE.$RPS: Starting to gather turbostat"
+        # ssh akamai@$DUT_IP "sudo turbostat -S -n 36 -q  > /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE/turbostat_$SIZE.$RPS">> outfile 2>&1&
+        # sleep $INTER_SLEEP
+        # echo "$SIZE.$RPS: Starting to gather pqos"
+        # ssh akamai@$DUT_IP "sudo pqos --mon-interval=50 -t 180  > /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE/pqos_$SIZE.$RPS">> outfile 2>&1&
+        sleep $INTER_SLEEP
+        echo "$SIZE.$RPS: Starting to gather sensors"
+        ssh akamai@$DUT_IP "i=0; while [ \$i -lt $RUN_TIME ]; do sudo sensors -j >> /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE/sensors_$SIZE.$RPS; sleep 5; i=\$((\$i + 36)); done">> outfile 2>&1&
+
+        sleep $INTER_SLEEP
+        echo "$SIZE.$RPS: Starting to gather power"
+        ssh akamai@$DUT_IP "sudo pkill ipmitool"
+        sleep $INTER_SLEEP
+        ssh akamai@$DUT_IP "i=0; while [ \$i -lt $RUN_TIME ]; do sudo ipmitool sdr >> /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE/power_$SIZE.$RPS; sleep 20; i=\$((\$i + 30)); done">> outfile 2>&1&
+        
+        sleep $INTER_SLEEP
+        echo "$SIZE.$RPS: Starting to gather memroy bandwidth"
+        ssh akamai@$DUT_IP "sudo /home/akamai/AMDuProf_Nda_Linux_x64_3.6.399/bin/AMDuProfPcm -m memory -a -d 30 > /home/akamai/$TEST_RESULTS_FOLDER/test_$SIZE/uprof_$SIZE.$RPS">> outfile 2>&1&
+        sleep $INTER_SLEEP
+
+
+        sleep $RUN_TIME
+        echo "$SIZE.$RPS: Sleeping buffer"
+        sleep 30
+    done
+done

@@ -1,0 +1,70 @@
+#!/bin/bash
+
+dehumanise() {
+  for v in "${@:-$(</dev/stdin)}"
+  do  
+    echo $v | awk \
+      'BEGIN{IGNORECASE = 1}
+       function printpower(n,b,p) {printf "%u\n", n*b^p; next}
+       /[0-9]$/{print $1;next};
+       /K(iB)?$/{printpower($1,  2, 10)};
+       /M(iB)?$/{printpower($1,  2, 20)};
+       /G(iB)?$/{printpower($1,  2, 30)};
+       /T(iB)?$/{printpower($1,  2, 40)};
+       /KB$/{    printpower($1, 10,  3)};
+       /MB$/{    printpower($1, 10,  6)};
+       /GB$/{    printpower($1, 10,  9)};
+       /TB$/{    printpower($1, 10, 12)}'
+  done
+} 
+
+
+for d in */ ; do
+    for t in $d* ; do
+        
+        bs=$(echo $t | cut -d'.' -f1 | cut -d'_' -f2 | cut -d'/' -f1)
+        type=$(echo $t | cut -d'.' -f1 | cut -d'_' -f2 | cut -d'/' -f2)
+        rps=$(echo $t | cut -d'.' -f2)
+
+        if [[ "$t" == *"wrk"* ]]; then
+            rps=$(echo $t | cut -d'.' -f3)
+        fi
+
+        if [[ "$t" == *"mpstat"* ]]; then
+            avg_cpu=$(cat $t | grep all | awk -F ':' '{print $12}'| sed 's/.\{2\}$//')
+            echo $type, $bs, $rps, $avg_cpu
+        fi
+
+        if [[ "$t" == *"sar"* ]]; then
+            kb1=$(cat $t | grep ens34f0np0  | tr -s ' ' | cut -d ' ' -f 6 | tail -n1)
+            kb2=$(cat $t | grep ens34f1np1  | tr -s ' ' | cut -d ' ' -f 5 | tail -n1)
+            echo $type, $bs, $rps, $kb1, $kb2
+        fi
+
+        if [[ "$t" == *"wrk"* ]]; then
+            v2=$(cat $t | grep "50.000% " | tr -s ' ' | cut -d ' ' -f 3)
+            v3=$(cat $t | grep "75.000% " | tr -s ' ' | cut -d ' ' -f 3)
+            v4=$(cat $t | grep "90.000% " | tr -s ' ' | cut -d ' ' -f 3)
+            v5=$(cat $t | grep "99.000% " | tr -s ' ' | cut -d ' ' -f 3)
+            v6=$(cat $t | grep "99.990% " | tr -s ' ' | cut -d ' ' -f 3)
+            rqps=$(cat $t | grep "Requests/sec" | tr -s ' ' | cut -d ' ' -f 2)
+            tps=$(cat $t | grep "Transfer/sec" | tr -s ' ' | cut -d ' ' -f 2)
+            echo $type, $bs, $rps, $v2, $v3, $v4, $v5, $v6, $rqps, $tps
+        fi
+
+        if [[ "$t" == *"pqos"* ]]; then
+            avg_mem=$(cat $t | sed 's/  */ /g' | cut -d' ' -f6 | tr -dc '[. [:digit:]]\n' | sed '/^$/d' | awk '{ total += $0; count++ } END { print total/(37) }')
+            echo $type, $bs, $rps, $avg_mem
+        fi
+
+        if [[ "$t" == *"turbostat"* ]]; then
+            ipc=$(cat $t | cut -d$'\t' -f5 | tr -dc '[. [:digit:]]\n' | sed '/^$/d' | awk '{ total += $0; count++ } END { print total/count }')
+            bzy_mhz=$(cat $t | cut -d$'\t' -f3 | tr -dc '[. [:digit:]]\n' | sed '/^$/d' | awk '{ total += $0; count++ } END { print total/count }')
+            core_tmp=$(cat $t | cut -d$'\t' -f16 | tr -dc '[. [:digit:]]\n' | sed '/^$/d' | awk '{ total += $0; count++ } END { print total/count }')
+            echo $type, $bs, $rps, $ipc, $bzy_mhz, $core_tmp
+        fi
+        
+    done
+    
+    
+done
